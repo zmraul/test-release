@@ -33,6 +33,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install UV and Tox
+        run: |
+          pipx uninstall tox || true
+          sudo snap install astral-uv --classic
+          uv tool install tox --with tox-uv --force
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
