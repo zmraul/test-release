@@ -1,3 +1,4 @@
+type: charm
 platforms:
   ubuntu@24.04:amd64:
 
