@@ -53,5 +53,3 @@ jobs:
           ls -la
           env
           tox run -e integration
-        env:
-          CHARM_PATH: ${{ needs.build.outputs.charms }}
