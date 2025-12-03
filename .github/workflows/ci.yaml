@@ -20,7 +20,7 @@ jobs:
     name: Build charm
     uses: canonical/data-platform-workflows/.github/workflows/build_charm.yaml@v32.2.2
     with:
-      path-to-charm-directory: .
+      cache: false
 
   integration-test:
     strategy:
@@ -33,6 +33,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install UV and Tox
+        run: |
+          pipx uninstall tox || true
+          sudo snap install astral-uv --classic
+          uv tool install tox --with tox-uv --force
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
@@ -44,6 +49,7 @@ jobs:
           pattern: ${{ needs.build.outputs.artifact-prefix }}-*
           merge-multiple: true
       - name: Run tests
-        run: tox run -e integration
-        env:
-          CHARM_PATH: ${{ needs.build.outputs.charms }}
+        run: |
+          ls -la
+          env
+          tox run -e integration

@@ -24,6 +24,7 @@ class TestReleaseCharm(ops.CharmBase):
 
     def _on_install(self, event: ops.InstallEvent):
         """Install the workload on the machine."""
+        self.unit.status = ops.MaintenanceStatus("installing workload")
         test_release.install()
 
     def _on_start(self, event: ops.StartEvent):
