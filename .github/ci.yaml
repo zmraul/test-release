@@ -44,6 +44,9 @@ jobs:
           pattern: ${{ needs.build.outputs.artifact-prefix }}-*
           merge-multiple: true
       - name: Run tests
-        run: tox run -e integration
+        run: |
+          ls -la
+          env
+          tox run -e integration
         env:
           CHARM_PATH: ${{ needs.build.outputs.charms }}
