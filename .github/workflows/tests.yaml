@@ -1,0 +1,20 @@
+name: Tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+    name: "test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run tests
+        run: |
+          ls -la
