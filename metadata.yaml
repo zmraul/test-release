@@ -2,6 +2,7 @@
 # See https://documentation.ubuntu.com/charmcraft/stable/reference/files/charmcraft-yaml-file/
 type: charm
 name: test-release
+display-name: Test Release
 title: Test release
 summary: A very short one-line summary of the charm.
 description: |
