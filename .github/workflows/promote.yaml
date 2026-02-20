@@ -32,3 +32,23 @@ jobs:
       charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
     permissions:
       contents: write  # Needed to edit GitHub releases
+  trigger-release-ci:
+    # only on candidate promotion
+    if: ${{ inputs.to-risk == 'candidate' }}
+    name: Trigger release CI
+    runs-on: ubuntu-latest
+    needs: promote
+    steps:
+      - name: Trigger Airflow DAG
+        run: |
+          curl -X POST \
+            "https://airflow.data-platform.ps7.canonical.com/api/v2/dags/release_test/dagRuns" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.AIRFLOW_API_TOKEN }}" \
+            -d '{
+              "dag_run_id": "promote-${{ github.run_id }}",
+              "conf": {
+                "charm": "test-release",
+                "version": "${{ github.ref_name }}"
+              }
+            }'
