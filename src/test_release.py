@@ -26,7 +26,6 @@ def start() -> None:
     """Start the workload (by running a commamd, for example)."""
     # You'll need to implement this function.
     # Ideally, this function should only return once the workload is ready to use.
-    time.sleep(5)
     return None
 
 
