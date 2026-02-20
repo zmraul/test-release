@@ -41,14 +41,26 @@ jobs:
     steps:
       - name: Trigger Airflow DAG
         run: |
-          curl -X POST \
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             "https://airflow.data-platform.ps7.canonical.com/api/v2/dags/release_test/dagRuns" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.AIRFLOW_API_TOKEN }}" \
-            -d '{
-              "dag_run_id": "promote-${{ github.run_id }}",
-              "conf": {
-                "charm": "test-release",
-                "version": "${{ github.ref_name }}"
+            -d "{
+              \"dag_run_id\": \"promote-${{ github.run_id }}\",
+              \"logical_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"conf\": {
+                \"charm\": \"test-release\",
+                \"version\": \"${{ github.ref_name }}\"
               }
-            }'
+            }")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if echo "$body" | grep -q '"detail":"Token Expired"'; then
+            echo "::error::Airflow API token has expired"
+            exit 1
+          fi
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Airflow API request failed with status $http_code"
+            exit 1
+          fi
