@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 def install() -> None:
     """Install the workload (by installing a snap, for example)."""
     # You'll need to implement this function.
-    time.sleep(10)
+    logger.info("Installing workload...")
+    time.sleep(5)
     return None
 
 
