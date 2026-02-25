@@ -19,7 +19,7 @@ def install() -> None:
     """Install the workload (by installing a snap, for example)."""
     # You'll need to implement this function.
     logger.info("Installing workload...")
-    time.sleep(5)
+    time.sleep(6)
     return None
 
 
