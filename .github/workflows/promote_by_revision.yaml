@@ -1,0 +1,37 @@
+name: Promote charm by revision
+
+on:
+  workflow_dispatch:
+    inputs:
+      revisions:
+        description: |
+          Comma-separated list of git revision tags to promote (e.g. 'rev123,rev124')
+        required: true
+        type: string
+      track:
+        description: Charmhub track to promote to
+        required: true
+        type: string
+        default: 'latest'
+      to-risk:
+        description: Promote to this Charmhub risk
+        required: true
+        type: choice
+        options:
+          - beta
+          - candidate
+          - stable
+
+jobs:
+  promote:
+    name: Promote charm by revision
+    uses: canonical/data-platform-workflows/.github/workflows/_promote_charms_by_revision.yaml@v42.0.0
+    with:
+      revisions: ${{ inputs.revisions }}
+      track: ${{ inputs.track }}
+      to-risk: ${{ inputs.to-risk }}
+    secrets:
+      charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
+    permissions:
+      actions: read
+      contents: write
