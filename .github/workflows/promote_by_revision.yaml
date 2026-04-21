@@ -25,7 +25,7 @@ on:
 jobs:
   promote:
     name: Promote charm by revision
-    uses: canonical/data-platform-workflows/.github/workflows/_promote_charms_by_revision.yaml@v42.0.0
+    uses: canonical/data-platform-workflows/.github/workflows/_promote_charms_by_revision.yaml@feat/dpe-9830-promote-revision
     with:
       revisions: ${{ inputs.revisions }}
       track: ${{ inputs.track }}
