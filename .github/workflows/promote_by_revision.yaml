@@ -31,7 +31,7 @@ jobs:
       track: ${{ inputs.track }}
       to-risk: ${{ inputs.to-risk }}
     secrets:
-      charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
+      charmhub-token: ${{ secrets.CHARMHUB_TOKEN_PROMOTION }}
     permissions:
       actions: read
       contents: write
