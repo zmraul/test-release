@@ -30,6 +30,7 @@ jobs:
       revisions: ${{ inputs.revisions }}
       track: ${{ inputs.track }}
       to-risk: ${{ inputs.to-risk }}
+      charmcraft-snap-revision: 8137  # 4.4.0 (edge release)
     secrets:
       charmhub-token: ${{ secrets.CHARMHUB_TOKEN_PROMOTION }}
     permissions:
