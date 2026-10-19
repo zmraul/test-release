@@ -1,0 +1,38 @@
+{# Test Release release notes template.
+
+   Used by .github/workflows/release_notes.yaml. CI copies this file into the
+   release-notes-builder checkout's templates/ directory so that
+   `{% extends "base.md.j2" %}` resolves.
+
+   Differences from base.md.j2:
+   - MyST frontmatter and a `(reference-release-notes-revision-N)=` anchor,
+     following the Data charms docs convention. Frontmatter must stay on line 1.
+   - Title is `# Revision N`; no date line.
+   - Compatibility lists one row per platform in charmcraft.yaml.
+#}
+{% extends "base.md.j2" %}
+
+{% block frontmatter %}
+---
+myst:
+  html_meta:
+    description: "Test Release {{ title | lower }} release notes."
+---
+
+(reference-release-notes-{{ title | lower | replace(" ", "-") }})=
+{% endblock %}
+
+{% block date_line %}{% endblock %}
+
+{% block intro_links %}
+[Charmhub](https://charmhub.io/test-release)
+{% endblock %}
+
+{% block compatibility %}
+<!-- TODO: Fill in the revision for each platform. -->
+
+| Charm | Revision | Hardware architecture | Base |
+| :--- | :--- | :--- | :--- |
+| Test Release | TODO | AMD64 | ubuntu@22.04 |
+| Test Release | TODO | AMD64 | ubuntu@24.04 |
+{% endblock %}
