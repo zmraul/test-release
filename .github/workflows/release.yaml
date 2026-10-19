@@ -25,6 +25,6 @@ jobs:
       track: latest
       artifact-prefix: ${{ needs.ci-tests.outputs.artifact-prefix }}
     secrets:
-      charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
+      charmhub-token: ${{ secrets.CHARMHUB_TOKEN_PROMOTION }}
     permissions:
       contents: write  # Needed to create git tags
