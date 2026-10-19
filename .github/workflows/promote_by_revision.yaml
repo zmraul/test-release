@@ -5,14 +5,12 @@ on:
     inputs:
       revisions:
         description: |
-          Comma-separated list of git revision tags to promote (e.g. 'rev123,rev124')
+          Comma-separated list of git revision tags to promote.
+          These must match the tags created by canonical/data-platform-workflows release_charm_edge.yaml
+
+          Example: 'rev123,rev124'
         required: true
         type: string
-      track:
-        description: Charmhub track to promote to
-        required: true
-        type: string
-        default: 'latest'
       to-risk:
         description: Promote to this Charmhub risk
         required: true
@@ -28,8 +26,8 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: canonical/data-platform-workflows/.github/workflows/_promote_charms.yaml@v49.0.1
     with:
+      track: 'latest'
       revisions: ${{ inputs.revisions }}
-      track: ${{ inputs.track }}
       to-risk: ${{ inputs.to-risk }}
       charmcraft-snap-channel: latest/edge
     secrets:
@@ -37,3 +35,46 @@ jobs:
     permissions:
       actions: read  # Needed for Github API call to get workflow version
       contents: write  # Needed to edit GitHub releases
+
+  trigger-release-ci:
+    # only on candidate promotion
+    if: ${{ inputs.to-risk == 'candidate' }}
+    name: Trigger release CI
+    runs-on: ubuntu-latest
+    needs: promote
+    steps:
+      - name: Trigger Airflow DAG
+        env:
+          AIRFLOW_API_TOKEN: ${{ secrets.AIRFLOW_API_TOKEN }}
+          DAG_RUN_ID: promote-by-revision-${{ github.run_id }}-${{ github.run_attempt }}
+          VERSION: ${{ github.ref_name }}
+          REVISIONS: ${{ inputs.revisions }}
+        run: |
+          payload=$(jq -n \
+            --arg dag_run_id "$DAG_RUN_ID" \
+            --arg logical_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg version "$VERSION" \
+            --arg revisions "$REVISIONS" \
+            '{
+              dag_run_id: $dag_run_id,
+              logical_date: $logical_date,
+              conf: {charm: "test-release", version: $version, revisions: $revisions}
+            }')
+          echo "$payload"
+
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://airflow.data-platform.ps7.canonical.com/api/v2/dags/release_test/dagRuns" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $AIRFLOW_API_TOKEN" \
+            -d "$payload")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if echo "$body" | grep -q '"detail":"Token Expired"'; then
+            echo "::error::Airflow API token has expired"
+            exit 1
+          fi
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Airflow API request failed with status $http_code"
+            exit 1
+          fi
