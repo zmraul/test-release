@@ -31,8 +31,9 @@ jobs:
       revisions: ${{ inputs.revisions }}
       track: ${{ inputs.track }}
       to-risk: ${{ inputs.to-risk }}
+      charmcraft-snap-channel: latest/edge
     secrets:
-      charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
+      charmhub-token: ${{ secrets.CHARMHUB_TOKEN_PROMOTION }}
     permissions:
       actions: read  # Needed for Github API call to get workflow version
       contents: write  # Needed to edit GitHub releases
