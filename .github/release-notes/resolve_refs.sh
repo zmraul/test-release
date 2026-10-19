@@ -2,7 +2,8 @@
 # Resolve the commit range for a release-notes run.
 #
 # Inputs (env):
-#   REVISIONS  optional, e.g. "15,16". The highest one titles the document.
+#   REVISIONS  optional, e.g. "15,16" or "rev15,rev16". The highest one titles
+#              the document.
 #              Defaults to the highest rev<N> tag.
 #   FROM_REF   optional start ref (exclusive). Defaults to the newest
 #              documented revision in DOCS_DIR, then to the newest ancestor
@@ -31,9 +32,9 @@ rev_numbers() {
 }
 
 if [[ -n "${REVISIONS:-}" ]]; then
-    revs=$(tr -s ', ' '\n' <<<"$REVISIONS" | sed '/^$/d')
+    revs=$(tr -s ', ' '\n' <<<"$REVISIONS" | sed '/^$/d; s/^rev//')
     if grep -qvE '^[0-9]+$' <<<"$revs"; then
-        die "Invalid revisions '$REVISIONS': expected comma-separated numbers"
+        die "Invalid revisions '$REVISIONS': expected comma-separated numbers or rev<N> tags"
     fi
     for rev in $revs; do
         peel "rev$rev" >/dev/null || die "Tag rev$rev not found"
