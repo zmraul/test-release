@@ -1,0 +1,300 @@
+name: Release notes
+
+# Triggered by the `release_test` Airflow DAG, or manually.
+# Generates release notes with https://github.com/izmalk/release-notes-builder
+# and opens a docs PR with the result.
+
+on:
+  workflow_dispatch:
+    inputs:
+      revisions:
+        description: |
+          Comma-separated revisions being released (e.g. '15,16'). The highest one
+          titles the document. Defaults to the highest rev<N> tag.
+        required: false
+        type: string
+        default: ''
+      from-ref:
+        description: |
+          Start ref, exclusive. Defaults to the newest documented revision, then to
+          the previous rev<N> tag on a different commit.
+        required: false
+        type: string
+        default: ''
+      use-agent:
+        description: Generate with the release-notes agent skill (autopilot) instead of the builder script
+        required: false
+        type: boolean
+        default: false
+      builder-ref:
+        description: release-notes-builder git ref to use
+        required: false
+        type: string
+        default: c873a51a5d462658d0cad471ba7f5aeca92ecc64
+      draft-pr:
+        description: Open the docs PR as a draft
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  generate:
+    name: Generate release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Read-only token: the agent runs with it, so it must not be able to push.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      revision: ${{ steps.refs.outputs.revision }}
+      from_ref: ${{ steps.refs.outputs.from_ref }}
+      from_sha: ${{ steps.refs.outputs.from_sha }}
+      from_source: ${{ steps.refs.outputs.from_source }}
+      to_ref: ${{ steps.refs.outputs.to_ref }}
+      to_sha: ${{ steps.refs.outputs.to_sha }}
+      commit_count: ${{ steps.refs.outputs.commit_count }}
+      output_path: ${{ steps.refs.outputs.output_path }}
+      branch: ${{ steps.refs.outputs.branch }}
+      mode: ${{ steps.script.outputs.mode || steps.agent.outputs.mode }}
+      status: ${{ steps.script.outputs.status || steps.agent.outputs.status }}
+      page: ${{ steps.script.outputs.page || steps.agent.outputs.page }}
+      autolinks: ${{ steps.script.outputs.autolinks || steps.agent.outputs.autolinks }}
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch release-notes-builder
+        env:
+          BUILDER_REF: ${{ inputs.builder-ref }}
+        run: |
+          BUILDER_HOME="$RUNNER_TEMP/release-notes-builder"
+          OUT_DIR="$RUNNER_TEMP/release-notes-out"
+          mkdir -p "$OUT_DIR"
+          echo "BUILDER_HOME=$BUILDER_HOME" >> "$GITHUB_ENV"
+          echo "OUT_DIR=$OUT_DIR" >> "$GITHUB_ENV"
+
+          git clone --quiet https://github.com/izmalk/release-notes-builder.git "$BUILDER_HOME"
+          git -C "$BUILDER_HOME" checkout --quiet "$BUILDER_REF"
+          echo "release-notes-builder at $(git -C "$BUILDER_HOME" rev-parse HEAD)"
+          pip install --quiet -r "$BUILDER_HOME/requirements.txt"
+
+          # The product template extends base.md.j2, so it must sit next to it.
+          cp .github/release-notes/test-release.md.j2 "$BUILDER_HOME/templates/"
+
+      - name: Resolve refs
+        id: refs
+        env:
+          REVISIONS: ${{ inputs.revisions }}
+          FROM_REF: ${{ inputs.from-ref }}
+        run: |
+          .github/release-notes/resolve_refs.sh
+          cat "$GITHUB_OUTPUT"
+
+      - name: Generate with builder script
+        id: script
+        if: ${{ !inputs.use-agent }}
+        env:
+          FROM_SHA: ${{ steps.refs.outputs.from_sha }}
+          TO_SHA: ${{ steps.refs.outputs.to_sha }}
+          TITLE: ${{ steps.refs.outputs.title }}
+        run: |
+          page="$OUT_DIR/release-notes.md"
+          python "$BUILDER_HOME/build_release_notes.py" \
+            --repo "$GITHUB_REPOSITORY" \
+            --from-ref "$FROM_SHA" \
+            --to-ref "$TO_SHA" \
+            --use-prs \
+            --title "$TITLE" \
+            --template "$BUILDER_HOME/templates/test-release.md.j2" \
+            --output "$page" \
+            2>&1 | tee "$OUT_DIR/builder.log"
+
+          if python "$BUILDER_HOME/tools/check_autolinks.py" "$page" 2>&1 | tee "$OUT_DIR/autolinks.log"; then
+            autolinks=pass
+          else
+            autolinks=fail
+          fi
+
+          {
+            echo "mode=script"
+            # The builder output always has TODOs (intro, compatibility) left for a human.
+            echo "status=draft"
+            echo "page=$page"
+            echo "autolinks=$autolinks"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Claude Code
+        if: ${{ inputs.use-agent }}
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Generate with release-notes agent skill
+        id: agent
+        if: ${{ inputs.use-agent }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'claude-opus-5-5' }}
+          REVISION: ${{ steps.refs.outputs.revision }}
+          FROM_REF: ${{ steps.refs.outputs.from_ref }}
+          FROM_SHA: ${{ steps.refs.outputs.from_sha }}
+          TO_REF: ${{ steps.refs.outputs.to_ref }}
+          TO_SHA: ${{ steps.refs.outputs.to_sha }}
+          OUTPUT_PATH: ${{ steps.refs.outputs.output_path }}
+        run: |
+          if [[ -z "$ANTHROPIC_API_KEY" ]]; then
+            echo "::error::use-agent requires the ANTHROPIC_API_KEY secret"
+            exit 1
+          fi
+
+          # The skill resolves its builder checkout from this variable.
+          export RELEASE_NOTES_BUILDER_HOME="$BUILDER_HOME"
+          mkdir -p .claude/skills/release-notes
+          cp "$BUILDER_HOME/.github/skills/release-notes/SKILL.md" .claude/skills/release-notes/
+
+          report=".release-notes-review/test-release-$GITHUB_RUN_ID.json"
+          prompt="Use the release-notes skill to generate release notes in autopilot mode for Test Release.
+          Components file: .github/release-notes/components.txt (exhaustive).
+          Track: latest. Branch: main.
+          from-ref: $FROM_REF ($FROM_SHA).
+          to-ref: $TO_SHA (tag $TO_REF).
+          Title revision: $REVISION.
+          Template: $BUILDER_HOME/templates/test-release.md.j2.
+          Output: $OUTPUT_PATH.
+          Review report: $report."
+
+          claude -p "$prompt" \
+            --model "$CLAUDE_MODEL" \
+            --allowedTools "Skill,Bash,Read,Write,Edit,Glob,Grep" \
+            2>&1 | tee "$OUT_DIR/agent.log"
+
+          if [[ ! -f "$report" ]]; then
+            echo "::error::Agent did not write a review report at $report"
+            exit 1
+          fi
+          cp "$report" "$OUT_DIR/review-report.json"
+
+          status=$(jq -r '.status' "$report")
+          markdown_path=$(jq -r '.markdown_path // empty' "$report")
+          echo "Review report status: $status"
+
+          page=""
+          autolinks=$(jq -r '[.checks[] | select(.name == "autolinks") | .result][0] // "unknown"' "$report")
+          if [[ -n "$markdown_path" && -f "$markdown_path" ]]; then
+            page="$OUT_DIR/release-notes.md"
+            cp "$markdown_path" "$page"
+          fi
+
+          {
+            echo "mode=agent"
+            echo "status=$status"
+            echo "page=$page"
+            echo "autolinks=$autolinks"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$status" == "error" ]]; then
+            echo "::error::Agent reported status 'error'; see the review report artifact"
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes-out
+          if-no-files-found: ignore
+
+  open-pr:
+    name: Open docs PR
+    needs: generate
+    if: ${{ needs.generate.outputs.page != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVISION: ${{ needs.generate.outputs.revision }}
+      FROM_REF: ${{ needs.generate.outputs.from_ref }}
+      FROM_SHA: ${{ needs.generate.outputs.from_sha }}
+      FROM_SOURCE: ${{ needs.generate.outputs.from_source }}
+      TO_REF: ${{ needs.generate.outputs.to_ref }}
+      TO_SHA: ${{ needs.generate.outputs.to_sha }}
+      COMMIT_COUNT: ${{ needs.generate.outputs.commit_count }}
+      OUTPUT_PATH: ${{ needs.generate.outputs.output_path }}
+      BRANCH: ${{ needs.generate.outputs.branch }}
+      MODE: ${{ needs.generate.outputs.mode }}
+      STATUS: ${{ needs.generate.outputs.status }}
+      AUTOLINKS: ${{ needs.generate.outputs.autolinks }}
+      BUILDER_REF: ${{ inputs.builder-ref }}
+      DRAFT_PR: ${{ inputs.draft-pr }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes-out
+
+      - name: Commit and open PR
+        run: |
+          mkdir -p "$(dirname "$OUTPUT_PATH")"
+          cp "$RUNNER_TEMP/release-notes-out/release-notes.md" "$OUTPUT_PATH"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add "$OUTPUT_PATH"
+          git commit -m "docs: add release notes for revision $REVISION"
+          git push origin "$BRANCH"
+
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body=$(cat <<EOF
+          Auto-generated release notes for revision $REVISION.
+
+          | | |
+          | :--- | :--- |
+          | Mode | \`$MODE\` |
+          | Status | \`$STATUS\` |
+          | Range | \`$FROM_REF\` (\`${FROM_SHA:0:7}\`, from $FROM_SOURCE) → \`$TO_REF\` (\`${TO_SHA:0:7}\`), $COMMIT_COUNT commit(s) |
+          | Autolinks check | \`$AUTOLINKS\` |
+          | Builder ref | \`$BUILDER_REF\` |
+          | Run | $run_url |
+
+          Review and complete any TODOs before merging. The run artifacts contain the
+          builder/agent logs and, in agent mode, the JSON review report.
+          EOF
+          )
+
+          args=(--base main --head "$BRANCH" --title "docs: release notes for revision $REVISION" --body "$body")
+          if [[ "$DRAFT_PR" == "true" ]]; then
+            args+=(--draft)
+          fi
+          if [[ "$STATUS" == "blocked" ]]; then
+            gh label create "release-notes: blocked" --color B60205 \
+              --description "Release-notes review report is blocked" 2>/dev/null || true
+            args+=(--label "release-notes: blocked")
+          fi
+          gh pr create "${args[@]}"

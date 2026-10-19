@@ -1,0 +1,3 @@
+# Exhaustive component list for the release-notes skill (agent mode).
+# Format: Display name | owner/repo
+Test Release | zmraul/test-release
